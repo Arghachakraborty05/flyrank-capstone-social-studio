@@ -2,7 +2,7 @@
 
 A backend-focused social media campaign system that turns one stored blog post into platform-specific social media variants, validates platform constraints, supports human review, schedules approved variants, and publishes through interchangeable social publisher adapters.
 
-> **Implementation status:** Phase 1 - design and repository setup. The design and repository baseline are in place. The application, tests, seed workflow, and acceptance evidence are being implemented phase by phase. This README distinguishes planned behavior from behavior that has actually been implemented and verified.
+> **Implementation status:** Phase 1 (design and repository setup) and Phase 2 (database layer and core ORM models) are completed and committed. Application routes, variant generation, scheduling, and acceptance evidence are being implemented phase by phase. This README distinguishes planned behavior from behavior that has actually been implemented and verified.
 
 ## Project goals
 
@@ -153,13 +153,13 @@ The project intentionally avoids PostgreSQL, Redis, Docker, React, microservices
 | 4 - Adapters and idempotency    | `SocialPublisher`, real Telegram, mock X and LinkedIn, duplicate protection | Real Telegram message; repeated logical publication protection; adapter swap without business-logic changes |
 | 5 - Scheduling, history, and hardening | Persistent scheduler, restart/retry behavior, history, final documentation | Worker restart evidence, no duplicate successful app-level publication, recorded attempts and outcomes |
 
-At the current design stage, application code, automated tests, and the seed command remain unimplemented. `EVIDENCE.md` tracks acceptance probes, and `BUILDLOG.md` records development progress and AI assistance. Planned functionality is not considered complete until implemented and verified.
+The design stage, database layer and core ORM models are implemented and committed. Remaining application routes, automated tests, and the seed workflow are being implemented phase by phase. `EVIDENCE.md` tracks acceptance probes, and `BUILDLOG.md` records development progress and AI assistance. Planned functionality is not considered complete until fully implemented and verified.
 
 ## Setup and run
 
 ### Current repository state
 
-The repository currently contains the design baseline and initial project configuration, not a runnable application. Therefore, there is not yet a verified application start command or sample-data seed command to give. Commands such as `uvicorn app.main:app --reload` or `python -m app.seed` must not be treated as working until the corresponding modules and seed workflow have been implemented and tested.
+The repository contains the design baseline, project configuration, and the core database layer (`app/database.py`, `app/models.py`). A fully runnable FastAPI application entry point and route modules are actively being added phase by phase. Therefore, there is not yet a verified application start command or sample-data seed command to give. Commands such as `uvicorn app.main:app --reload` or `python -m app.seed` must not be treated as working until the corresponding modules and seed workflow have been implemented and tested.
 
 ### Run instructions to be completed during implementation
 

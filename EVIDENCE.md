@@ -2,7 +2,7 @@
 
 This document tracks verification of the Social Media Studio requirements. Results will be recorded from actual implementation and test execution.
 
-**Current status:** Acceptance testing pending; application implementation has not started.
+**Current status:** Phase 1: Design and repository setup, Phase 2: database layer and ORM models implemented; API routes, scheduler, and acceptance probe testing pending.
 
 ## Acceptance Probes
 
