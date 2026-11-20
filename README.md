@@ -2,7 +2,7 @@
 
 A backend-focused social media campaign system that turns one stored blog post into platform-specific social media variants, validates platform constraints, supports human review, schedules approved variants, and publishes through interchangeable social publisher adapters.
 
-> **Implementation status:** Phase 1 (design and repository setup) and Phase 2 (database layer and core ORM models) are completed and committed. Application routes, variant generation, scheduling, and acceptance evidence are being implemented phase by phase. This README distinguishes planned behavior from behavior that has actually been implemented and verified.
+> **Implementation status:** Phase 1 (design and repository setup) and Phase 2 (database layer, core ORM models, post ingestion, multi-platform variant generation, constraint validation, and `tests/test_phase2.py`) are completed and committed. Review workflows, publisher adapters, persistent scheduling, and acceptance evidence (`AP-01`–`AP-06`) are being implemented phase by phase. This README distinguishes planned behavior from behavior that has actually been implemented and verified.
 
 ## Project goals
 
@@ -54,11 +54,11 @@ See [`DESIGN.md`](DESIGN.md) for the full architecture, data model, API surface,
         Publish history
 ```
 
-All generation must use the stored source post. Invalid content must be blocked before review. Only approved variants may be scheduled. Publisher-specific API calls belong in adapters, not in campaign or scheduling business logic.
+All generation uses the stored source post. Invalid content is blocked before review. Only approved variants may be scheduled. Publisher-specific API calls belong in adapters, not in campaign or scheduling business logic.
 
 ## Initial platform constraint profiles
 
-These are the initial design profiles. The application must enforce the configured rules in code; a table in documentation alone is not enforcement.
+The application enforces configured platform rules in `app/services/constraints.py` rather than relying on documentation alone.
 
 | Platform | Maximum content length | Intended tone | Maximum hashtags |                         Publishing mode                           |
 |----------|------------------------|---------------|------------------|-------------------------------------------------------------------|
@@ -66,7 +66,7 @@ These are the initial design profiles. The application must enforce the configur
 |    X     |      280 characters    |    Concise    |        3         |                  Mock only; no real X publishing                  |
 | LinkedIn |     3000 characters    |  Professional |        5         |               Mock only; no real LinkedIn publishing              |
 
-The implementation uses deterministic templates and testable structural checks for tone. It does not claim perfect human-level tone classification. A failed validation must identify the specific rule that was broken, such as maximum length, hashtag count, or a configured tone-structure rule. Editing a variant must trigger validation again.
+The implementation uses deterministic templates and testable structural checks for tone. It does not claim perfect human-level tone classification. A failed validation identifies the specific rule that was broken, such as maximum length (`max_length`), hashtag count (`max_hashtags`), or a configured tone-structure rule. Editing a variant must trigger validation again.
 
 ## Architecture and design
 
@@ -81,9 +81,9 @@ class SocialPublisher(ABC):
         raise NotImplementedError
 ```
 
-The application will call the interface through a publisher registry. `TelegramPublisher` performs real publishing to a configured Telegram target. `MockXPublisher` and `MockLinkedInPublisher` persist local mock results and previews without contacting those platforms. Switching the configured adapter should not require changing campaign, review, or scheduling business logic.
+The application will call the interface through a publisher registry. `TelegramPublisher` will perform real publishing to a configured Telegram target. `MockXPublisher` and `MockLinkedInPublisher` will persist local mock results and previews without contacting those platforms. Switching the configured adapter will not require changing campaign, review, or scheduling business logic.
 
-### Planned persistent records
+### Persistent records
 
 |      Record      |                                            Purpose                                                |
 |------------------|---------------------------------------------------------------------------------------------------|
@@ -92,7 +92,7 @@ The application will call the interface through a publisher registry. `TelegramP
 |  `ScheduleSlot`  |          Stores the scheduled time, state, and unique idempotency key for a variant/slot.         |
 | `PublishAttempt` | Records attempts, outcome, error information, and external or mock publication ID when available. |
 
-SQLite and SQLAlchemy will persist application data. APScheduler with a persistent job store will preserve scheduled work across restarts. Schedule timestamps will use a consistent UTC convention, and the normalized schedule time will be used when deriving an idempotency key.
+SQLite and SQLAlchemy persist application data (`app/database.py`, `app/models.py`). APScheduler with a persistent job store will preserve scheduled work across restarts. Schedule timestamps use a consistent UTC convention, and the normalized schedule time is used when deriving an idempotency key.
 
 ### Review and scheduling rules
 
@@ -106,11 +106,11 @@ SQLite and SQLAlchemy will persist application data. APScheduler with a persiste
 
 ### Important delivery limitation
 
-A Telegram API call and a local SQLite transaction cannot be committed as one distributed atomic operation. Telegram may accept a message immediately before the application stops, leaving the local process uncertain about the result. The project will document this boundary honestly and will not claim universal exactly-once delivery across Telegram and SQLite. Tests and evidence will describe the retry guarantees actually demonstrated by the implementation.
+A Telegram API call and a local SQLite transaction cannot be committed as one distributed atomic operation. Telegram may accept a message immediately before the application stops, leaving the local process uncertain about the result. The project documents this boundary honestly and does not claim universal exactly-once delivery across Telegram and SQLite. Tests and evidence describe the retry guarantees actually demonstrated by the implementation.
 
-## Planned API surface
+## API surface
 
-The API will be built with FastAPI. The following endpoints are the design baseline; they are **planned**, not claimed to be available in the current design-only repository.
+The API is built with FastAPI. The endpoints below define the campaign ingestion, generation, review, scheduling, and publish-history surface for the application.
 
 | Method |                Endpoint               |                  Responsibility                   |
 |--------|---------------------------------------|---------------------------------------------------|
@@ -127,7 +127,7 @@ The API will be built with FastAPI. The following endpoints are the design basel
 | `GET`  | `/api/schedules`                      | List schedule slots and states.                   |
 | `GET`  | `/api/publish-history`                | View publication attempts and results.            |
 
-FastAPI's interactive API documentation is expected at `/docs` when the application is running. The actual run command and URL will be recorded here after the application entry point is implemented and verified.
+FastAPI's interactive API documentation is available at `/docs` when the application is running. 
 
 ## Technology stack
 
@@ -136,6 +136,7 @@ FastAPI's interactive API documentation is expected at `/docs` when the applicat
 - SQLite and SQLAlchemy
 - APScheduler with a persistent SQLAlchemy job store
 - Requests for HTTP calls
+- Pytest and Httpx for automated API testing
 - Environment variables loaded from `.env`
 - Telegram Bot API for real publishing
 - Database-backed mock adapters for X and LinkedIn
@@ -143,35 +144,58 @@ FastAPI's interactive API documentation is expected at `/docs` when the applicat
 
 The project intentionally avoids PostgreSQL, Redis, Docker, React, microservices, billing, analytics, and other infrastructure that is not required for the capstone.
 
-## Repository status and planned phases
+## Phased engineering roadmap
 
-|               Phase             |                                  Scope                                     |     Completion evidence     |
+|               Phase             |                                  Scope                                     |     Acceptance criteria     |
 |---------------------------------|----------------------------------------------------------------------------|-----------------------------|
-| 1 - Design and repository setup | Public repository, environment template, ignore rules, architecture design | `DESIGN.md` and Git history |
-| 2 - Ingestion and generation    | Ingest URL/Markdown, persist source, generate at least two platform variants, enforce constraints | One stored post generates different variants; invalid content is blocked with a named rule |
-| 3 - Review workflow             | Draft/approved/rejected states, edit/revalidate, approve/reject, scheduling guard | An unapproved variant cannot be scheduled; a valid approved variant can be scheduled |
-| 4 - Adapters and idempotency    | `SocialPublisher`, real Telegram, mock X and LinkedIn, duplicate protection | Real Telegram message; repeated logical publication protection; adapter swap without business-logic changes |
-| 5 - Scheduling, history, and hardening | Persistent scheduler, restart/retry behavior, history, final documentation | Worker restart evidence, no duplicate successful app-level publication, recorded attempts and outcomes |
+| 1 - Design and repository setup | Public repository, environment template, ignore rules, architecture design | `DESIGN.md` baseline and clean initial Git history |
+| 2 - Ingestion and generation    | Database layer, ORM models, URL/Markdown ingestion, multi-platform variant generation, and constraint enforcement | One stored post generates distinct platform variants; invalid content is blocked with a named rule |
+| 3 - Review workflow             | `draft`/`approved`/`rejected` states, edit with revalidation, approve/reject endpoints, and scheduling guard | Unapproved variants cannot be scheduled; valid approved variants can be scheduled |
+| 4 - Adapters and idempotency    | `SocialPublisher` interface, real Telegram adapter, mock X/LinkedIn adapters, and duplicate protection | Live Telegram delivery; idempotent repeated publication handling; and adapter swapping without business-logic changes |
+| 5 - Scheduling, history, and hardening | Persistent scheduler, worker restart/retry recovery, publish-attempt history, and final documentation | Worker restart recovery without duplicate app-level publication, and persisted attempt/outcome history |
 
-The design stage, database layer and core ORM models are implemented and committed. Remaining application routes, automated tests, and the seed workflow are being implemented phase by phase. `EVIDENCE.md` tracks acceptance probes, and `BUILDLOG.md` records development progress and AI assistance. Planned functionality is not considered complete until fully implemented and verified.
+Repository setup, architecture design, the database layer, post ingestion, multi-platform variant generation, constraint validation, and initial automated tests are implemented and committed. Review workflows, publisher adapters, persistent scheduling, and the sample seed workflow are being added phase by phase. `EVIDENCE.md` tracks formal acceptance probes, and `BUILDLOG.md` records development progress and AI assistance. Planned functionality is not considered complete until fully implemented and verified.
 
 ## Setup and run
 
 ### Current repository state
 
-The repository contains the design baseline, project configuration, and the core database layer (`app/database.py`, `app/models.py`). A fully runnable FastAPI application entry point and route modules are actively being added phase by phase. Therefore, there is not yet a verified application start command or sample-data seed command to give. Commands such as `uvicorn app.main:app --reload` or `python -m app.seed` must not be treated as working until the corresponding modules and seed workflow have been implemented and tested.
+The repository includes the design baseline, project configuration, database layer (`app/database.py`, `app/models.py`), FastAPI application entry point (`app/main.py`), Phase 2 ingestion/generation/validation routes (`app/routers/posts.py`, `app/schemas.py`, `app/services/constraints.py`, `app/services/generator.py`), and Phase 2 automated tests (`tests/test_phase2.py`). Review, scheduling, publisher adapters, and the sample seed workflow (`python -m app.seed`) are pending in Phases 3–5.
 
-### Run instructions to be completed during implementation
+## Running the Phase 2 API and tests
 
-Once the application and seed workflow exist, this section will contain exact, tested instructions for:
+1. **Activate your Python 3.12 environment and install dependencies:**
 
-1. Python 3.12 setup and dependency installation.
-2. Creating a local `.env` from `.env.example` and configuring Telegram credentials if real publishing is being tested.
-3. Starting the application and opening `/docs`.
-4. Seeding sample data with one explicit command.
-5. Running automated tests and the acceptance probes.
+```bash
+pip install -r requirements.txt
+```
 
-The final capstone README will replace this note with the actual commands and expected outputs before submission. This avoids giving strangers commands that do not match code in the repository.
+2. **Create a local .env from .env.example if needed:**
+
+```bash
+cp .env.example .env
+```
+
+3. **Start the FastAPI server:**
+
+```bash
+uvicorn app.main:app --reload
+```
+
+The API will run at:
+
+`http://127.0.0.1:8000`
+
+Inspect interactive docs at:
+
+`http://127.0.0.1:8000/docs`
+
+4. **Run the Phase 2 automated test suite:**
+
+```bash
+PYTHONPATH=. pytest -v
+```
+Instructions for sample data seeding (`python -m app.seed`), live Telegram adapter testing, and acceptance probes (`AP-01`–`AP-06`) will be added as Phases 3–5 are implemented and verified.
 
 ## Configuration and secrets
 
@@ -186,7 +210,7 @@ A real Telegram test requires a bot token and a Telegram destination that the bo
 
 ## Testing and acceptance evidence
 
-`EVIDENCE.md` will capture the actual test names, commands, outputs, API transcripts, and logs for each required probe. The evidence will cover:
+`EVIDENCE.md` captures the actual test names, commands, outputs, API transcripts, and logs for each required probe. The evidence covers:
 
 1. Ingesting one source and generating valid variants for the configured platforms.
 2. Blocking a deliberately invalid variant and naming its broken rule.
@@ -195,11 +219,11 @@ A real Telegram test requires a bot token and a Telegram destination that the bo
 5. Interrupting and restarting worker processing and checking persistent schedule/history state and duplicate protection.
 6. Switching to `mock_x` and publishing through the same workflow without changing business logic.
 
-Only results actually observed from the implementation will be recorded as passing. A test that has not run or an acceptance probe that has not been demonstrated will be marked pending or failed, not described as successful.
+Only results actually observed from the implementation are recorded as passing. A test that has not run or an acceptance probe that has not been demonstrated remains marked pending or failed, not described as successful.
 
 ## AI-use and build log
 
-`BUILDLOG.md` will record implementation progress, meaningful decisions, where AI assistance was used, mistakes or incorrect suggestions, and how those were checked or corrected. AI-generated code will be reviewed and tested; AI use will not be presented as proof that a feature works.
+`BUILDLOG.md` records implementation progress, meaningful decisions, where AI assistance was used, mistakes or incorrect suggestions, and how those were checked or corrected. AI-generated code is reviewed and tested; AI use is not presented as proof that a feature works.
 
 ## Explicit non-goals
 
