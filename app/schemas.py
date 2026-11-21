@@ -47,3 +47,20 @@ class PostRead(BaseModel):
     variants: list[VariantRead] = []
 
     model_config = {"from_attributes": True}
+
+class VariantUpdateRequest(BaseModel):
+    content: str = Field(..., min_length=1)
+
+
+class ScheduleVariantRequest(BaseModel):
+    scheduled_at: datetime
+
+
+class ScheduleSlotRead(BaseModel):
+    id: int
+    variant_id: int
+    scheduled_at: datetime
+    idempotency_key: str
+    status: str
+
+    model_config = {"from_attributes": True}
